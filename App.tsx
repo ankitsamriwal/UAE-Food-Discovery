@@ -16,6 +16,9 @@ import {
   Map as MapIcon
 } from 'lucide-react';
 import { EatingJoint } from './types';
+import { fetchJoints, createJoint, deleteJoint } from './lib/joints';
+import { uploadImageToCloudinary } from './lib/cloudinary';
+import { isSupabaseConfigured } from './lib/supabaseClient';
 
 const AVAILABLE_TAGS = [
   'Breakfast',
@@ -32,54 +35,6 @@ const AVAILABLE_TAGS = [
   'Fine Dining'
 ];
 
-const INITIAL_JOINTS: EatingJoint[] = [
-  {
-    id: '1',
-    name: 'Al Fanar Restaurant & Cafe',
-    emirate: 'Dubai',
-    address: 'Dubai Festival City Mall, Canal Walk, Dubai',
-    lat: 25.2215,
-    lng: 55.3524,
-    specialty: 'Traditional Emirati Lamb Machboos & Luqaimat',
-    image: 'https://images.unsplash.com/photo-1541518763669-27fef04b14e8?auto=format&fit=crop&q=80&w=800',
-    tags: ['Emirati', 'Breakfast', 'Kunafa', 'Family Friendly'],
-    rating: 4.8,
-    reviewsCount: 142,
-    contributor: 'Community Seed',
-    createdAt: '2026-01-15'
-  },
-  {
-    id: '2',
-    name: 'Al Khayma Heritage Restaurant',
-    emirate: 'Dubai',
-    address: 'Building 79, Al Fahidi Historical District, Dubai',
-    lat: 25.2634,
-    lng: 55.2972,
-    specialty: 'Charcoal Chicken Kebab & Fresh Regag Bread',
-    image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&q=80&w=800',
-    tags: ['Emirati', 'Outdoor Seating', 'Breakfast', 'Karak Tea'],
-    rating: 4.9,
-    reviewsCount: 210,
-    contributor: 'Community Seed',
-    createdAt: '2026-02-01'
-  },
-  {
-    id: '3',
-    name: "Mina Za'abeel Seafood Restaurant",
-    emirate: 'Abu Dhabi',
-    address: 'Free Port, Mina Zayed, Abu Dhabi',
-    lat: 24.5222,
-    lng: 54.3731,
-    specialty: 'Freshly Fried Hamour & Spiced Rice',
-    image: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&q=80&w=800',
-    tags: ['Seafood', 'Buffet', 'Budget Friendly'],
-    rating: 4.6,
-    reviewsCount: 88,
-    contributor: 'AbuDhabiFoodie',
-    createdAt: '2026-02-10'
-  }
-];
-
 const EMIRATES = [
   'All Emirates',
   'Abu Dhabi',
@@ -91,7 +46,6 @@ const EMIRATES = [
   'Fujairah'
 ];
 
-const STORAGE_KEY = 'uae_eating_joints_v3';
 const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=800';
 
 // Approximate city-center coordinates, used as a per-emirate fallback when a
@@ -113,7 +67,7 @@ interface JointFormState {
   lat: string;
   lng: string;
   specialty: string;
-  image: string;
+  imageFile: File | null;
   rating: number;
   tags: string[];
   customTagInput: string;
@@ -127,7 +81,7 @@ const EMPTY_FORM: JointFormState = {
   lat: '',
   lng: '',
   specialty: '',
-  image: '',
+  imageFile: null,
   rating: 5,
   tags: [],
   customTagInput: '',
@@ -135,10 +89,10 @@ const EMPTY_FORM: JointFormState = {
 };
 
 const App: React.FC = () => {
-  const [joints, setJoints] = useState<EatingJoint[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? (JSON.parse(saved) as EatingJoint[]) : INITIAL_JOINTS;
-  });
+  const [joints, setJoints] = useState<EatingJoint[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmirate, setSelectedEmirate] = useState('All Emirates');
@@ -151,14 +105,27 @@ const App: React.FC = () => {
   const [formData, setFormData] = useState<JointFormState>(EMPTY_FORM);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(joints));
-  }, [joints]);
+    if (!isSupabaseConfigured) {
+      setLoadError('Supabase is not configured. Copy .env.example to .env and fill in your project credentials.');
+      setIsLoading(false);
+      return;
+    }
+
+    fetchJoints()
+      .then((data) => setJoints(data))
+      .catch(() => setLoadError('Failed to load eateries. Check your Supabase configuration and table setup.'))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData((prev) => ({ ...prev, imageFile: e.target.files?.[0] ?? null }));
   };
 
   const handleTagToggle = (tag: string) => {
@@ -171,38 +138,50 @@ const App: React.FC = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setIsSubmitting(true);
 
-    const fallbackCoords = EMIRATE_COORDINATES[formData.emirate] || EMIRATE_COORDINATES['Dubai'];
+    try {
+      const fallbackCoords = EMIRATE_COORDINATES[formData.emirate] || EMIRATE_COORDINATES['Dubai'];
+      const imageUrl = formData.imageFile
+        ? await uploadImageToCloudinary(formData.imageFile)
+        : DEFAULT_IMAGE;
 
-    const newJoint: EatingJoint = {
-      id: Date.now().toString(),
-      name: formData.name.trim(),
-      emirate: formData.emirate,
-      address: formData.address.trim(),
-      lat: parseFloat(formData.lat) || fallbackCoords.lat,
-      lng: parseFloat(formData.lng) || fallbackCoords.lng,
-      specialty: formData.specialty.trim(),
-      image: formData.image.trim() || DEFAULT_IMAGE,
-      rating: Number(formData.rating) || 5,
-      reviewsCount: 1,
-      tags: formData.tags.length > 0 ? formData.tags : ['Popular Spot'],
-      contributor: formData.contributor.trim() || 'Anonymous',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
+      const newJoint = await createJoint({
+        name: formData.name.trim(),
+        emirate: formData.emirate,
+        address: formData.address.trim(),
+        lat: parseFloat(formData.lat) || fallbackCoords.lat,
+        lng: parseFloat(formData.lng) || fallbackCoords.lng,
+        specialty: formData.specialty.trim(),
+        image: imageUrl,
+        rating: Number(formData.rating) || 5,
+        reviewsCount: 1,
+        tags: formData.tags.length > 0 ? formData.tags : ['Popular Spot'],
+        contributor: formData.contributor.trim() || 'Anonymous'
+      });
 
-    setJoints((prev) => [newJoint, ...prev]);
-    setIsModalOpen(false);
-    setFormData(EMPTY_FORM);
-
-    showToast('New eating joint & location pin added!');
+      setJoints((prev) => [newJoint, ...prev]);
+      setIsModalOpen(false);
+      setFormData(EMPTY_FORM);
+      showToast('New eating joint & location pin added!');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to add eating joint. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to remove this eatery?')) {
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to remove this eatery?')) return;
+
+    try {
+      await deleteJoint(id);
       setJoints((prev) => prev.filter((j) => j.id !== id));
       showToast('Eatery removed.');
+    } catch {
+      showToast('Failed to remove eatery. Please try again.');
     }
   };
 
@@ -345,7 +324,17 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        {filteredJoints.length === 0 ? (
+        {loadError ? (
+          <div className="text-center py-16 bg-white rounded-xl border border-red-200">
+            <ChefHat className="w-12 h-12 mx-auto text-red-300 mb-3" />
+            <h3 className="text-lg font-semibold text-red-700">Couldn't load eateries</h3>
+            <p className="text-slate-500 text-sm mt-1 max-w-md mx-auto">{loadError}</p>
+          </div>
+        ) : isLoading ? (
+          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+            <p className="text-slate-500 text-sm">Loading eateries...</p>
+          </div>
+        ) : filteredJoints.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
             <ChefHat className="w-12 h-12 mx-auto text-slate-300 mb-3" />
             <h3 className="text-lg font-semibold text-slate-700">No matching joints found</h3>
@@ -607,6 +596,27 @@ const App: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5 text-amber-500" /> Photo (Optional)
+                </label>
+                <div className="flex items-center gap-3">
+                  {formData.imageFile && (
+                    <img
+                      src={URL.createObjectURL(formData.imageFile)}
+                      alt="Preview"
+                      className="w-14 h-14 object-cover rounded-lg border border-slate-200"
+                    />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageFileChange}
+                    className="flex-1 text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-50 file:text-amber-700 hover:file:bg-amber-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
                   <Tag className="w-3.5 h-3.5 text-amber-500" /> Select Tags
                 </label>
                 <div className="flex flex-wrap gap-1.5 mb-2 max-h-28 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
@@ -652,9 +662,10 @@ const App: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-xs shadow"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-slate-950 font-bold rounded-lg text-xs shadow"
                 >
-                  Publish Eating Joint
+                  {isSubmitting ? 'Publishing...' : 'Publish Eating Joint'}
                 </button>
               </div>
             </form>
