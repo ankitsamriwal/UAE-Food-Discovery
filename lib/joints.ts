@@ -9,10 +9,12 @@ interface JointRow {
   lat: number;
   lng: number;
   specialty: string;
+  story: string;
   image: string;
   tags: string[];
   rating: number;
-  reviews_count: number;
+  is_late_night: boolean;
+  is_under_20: boolean;
   contributor: string;
   created_at: string;
 }
@@ -25,10 +27,12 @@ const fromRow = (row: JointRow): EatingJoint => ({
   lat: row.lat,
   lng: row.lng,
   specialty: row.specialty,
+  story: row.story,
   image: row.image,
   tags: row.tags,
   rating: row.rating,
-  reviewsCount: row.reviews_count,
+  isLateNight: row.is_late_night,
+  isUnder20: row.is_under_20,
   contributor: row.contributor,
   createdAt: row.created_at.split('T')[0]
 });
@@ -55,10 +59,12 @@ export async function createJoint(joint: NewJoint): Promise<EatingJoint> {
       lat: joint.lat,
       lng: joint.lng,
       specialty: joint.specialty,
+      story: joint.story,
       image: joint.image,
       tags: joint.tags,
       rating: joint.rating,
-      reviews_count: joint.reviewsCount,
+      is_late_night: joint.isLateNight,
+      is_under_20: joint.isUnder20,
       contributor: joint.contributor
     })
     .select()

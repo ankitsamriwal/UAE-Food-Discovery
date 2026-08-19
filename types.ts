@@ -7,10 +7,12 @@ export interface EatingJoint {
   lat: number;
   lng: number;
   specialty: string;
+  story: string;
   image: string;
   tags: string[];
   rating: number;
-  reviewsCount: number;
+  isLateNight: boolean;
+  isUnder20: boolean;
   contributor: string;
   createdAt: string;
 }
