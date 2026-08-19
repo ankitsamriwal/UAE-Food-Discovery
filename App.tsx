@@ -18,11 +18,13 @@ import {
   Compass,
   Upload,
   Loader2,
-  Sparkles
+  Sparkles,
+  List as ListIcon
 } from 'lucide-react';
 import { EatingJoint } from './types';
 import { fetchJoints, createJoint, deleteJoint } from './lib/joints';
 import { uploadImageToCloudinary } from './lib/cloudinary';
+import DirectoryMapView from './components/DirectoryMapView';
 
 // Preset Metadata Tags
 const AVAILABLE_TAGS = [
@@ -77,7 +79,11 @@ const INITIAL_JOINTS: EatingJoint[] = [
     isUnder20: true,
     rating: 4.9,
     contributor: 'DeiraLocal',
-    createdAt: '2026-01-15'
+    createdAt: '2026-01-15',
+    dietaryTags: ['halal', 'non_veg'],
+    podFeatures: [],
+    locationType: null,
+    status: 'approved'
   },
   {
     id: '2',
@@ -94,7 +100,11 @@ const INITIAL_JOINTS: EatingJoint[] = [
     isUnder20: false,
     rating: 4.8,
     contributor: 'Community Seed',
-    createdAt: '2026-02-01'
+    createdAt: '2026-02-01',
+    dietaryTags: ['halal', 'non_veg'],
+    podFeatures: ['wheelchair_ramp', 'highchair'],
+    locationType: null,
+    status: 'approved'
   },
   {
     id: '3',
@@ -111,7 +121,11 @@ const INITIAL_JOINTS: EatingJoint[] = [
     isUnder20: false,
     rating: 4.7,
     contributor: 'JumeirahFoodie',
-    createdAt: '2026-02-10'
+    createdAt: '2026-02-10',
+    dietaryTags: ['non_veg'],
+    podFeatures: [],
+    locationType: 'beachfront',
+    status: 'approved'
   }
 ];
 
@@ -177,6 +191,7 @@ const App: React.FC = () => {
   const [activeMapJoint, setActiveMapJoint] = useState<EatingJoint | null>(null);
   const [toastMessage, setToastMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   // File Upload State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -257,7 +272,10 @@ const App: React.FC = () => {
         isLateNight: formData.isLateNight,
         isUnder20: formData.isUnder20,
         tags: formData.tags.length > 0 ? formData.tags : ['Hidden Gem'],
-        contributor: formData.contributor.trim() || 'Anonymous Explorer'
+        contributor: formData.contributor.trim() || 'Anonymous Explorer',
+        dietaryTags: [],
+        podFeatures: [],
+        locationType: null
       });
 
       setJoints((prev) => [newJoint, ...prev]);
@@ -283,7 +301,11 @@ const App: React.FC = () => {
         isUnder20: formData.isUnder20,
         tags: formData.tags.length > 0 ? formData.tags : ['Hidden Gem'],
         contributor: formData.contributor.trim() || 'Anonymous Explorer',
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: new Date().toISOString().split('T')[0],
+        dietaryTags: [],
+        podFeatures: [],
+        locationType: null,
+        status: 'approved'
       };
 
       setJoints((prev) => [localJoint, ...prev]);
@@ -379,17 +401,44 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Add Hidden Spot</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl p-1 text-xs font-bold">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                  viewMode === 'list' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ListIcon className="w-3.5 h-3.5" />
+                <span>List</span>
+              </button>
+              <button
+                onClick={() => setViewMode('map')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                  viewMode === 'map' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span>Map</span>
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold px-4 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/20 active:scale-95"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Add Hidden Spot</span>
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+      {viewMode === 'map' ? (
+        <DirectoryMapView />
+      ) : (
+      <>
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-400 uppercase tracking-widest">
             <Compass className="w-4 h-4 text-amber-400" /> Community Trail Playlists
@@ -573,6 +622,8 @@ const App: React.FC = () => {
             ))}
           </div>
         )}
+      </>
+      )}
       </main>
 
       {isModalOpen && (
